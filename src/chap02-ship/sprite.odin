@@ -221,11 +221,30 @@ sprite_component_update_background :: proc(sprite: ^Sprite_Component, delta_time
     
     // 全ての背景テクスチャのオフセットを更新
     for &bg_tex in sprite.bg_textures {
+        if bg_tex.texture == nil do continue
+        
+        // テクスチャサイズを取得
+        w, h: i32
+        sdl.QueryTexture(bg_tex.texture, nil, nil, &w, &h)
+        texture_width := f32(w)
+        
+        // 前のオフセット値を保存
+        old_offset := bg_tex.offset.x
+        
+        // オフセットを更新
         bg_tex.offset.x += sprite.scroll_speed * delta_time
         
-        // 画面幅分スクロールしたら元の位置に戻す（無限スクロール）
-        if bg_tex.offset.x > sprite.screen_size.x {
-            bg_tex.offset.x = 0.0
+        // 負の方向（左）にスクロールする場合の無限ループ
+        if sprite.scroll_speed < 0.0 {
+            // テクスチャが完全に左に移動したら右端にリセット
+            if bg_tex.offset.x <= -texture_width {
+                bg_tex.offset.x += texture_width
+            }
+        } else {
+            // 正の方向（右）にスクロールする場合の無限ループ
+            if bg_tex.offset.x >= texture_width {
+                bg_tex.offset.x -= texture_width
+            }
         }
     }
 }
@@ -243,15 +262,33 @@ sprite_component_draw_background :: proc(sprite: ^Sprite_Component, renderer: ^s
         // テクスチャサイズを取得
         w, h: i32
         sdl.QueryTexture(bg_tex.texture, nil, nil, &w, &h)
+        texture_width := f32(w)
+        texture_height := f32(h)
         
-        // 画面を埋めるために複数回描画
-        // 現在のオフセット位置から左右に描画
-        for i := -1; i <= 1; i += 1 {
+        // 画面を完全に埋めるために必要な描画回数を計算
+        // 画面幅に対してテクスチャ幅で何回描画が必要か
+        num_tiles := int(sprite.screen_size.x / texture_width) + 2  // +2で余裕を持たせる
+        
+        // 開始位置を計算（オフセットから左端まで）
+        start_x := bg_tex.offset.x
+        for start_x > 0 {
+            start_x -= texture_width
+        }
+        
+        // 必要な回数だけタイル状に描画
+        for i := 0; i < num_tiles; i += 1 {
+            x_pos := start_x + f32(i) * texture_width
+            
+            // 画面外の描画はスキップ（最適化）
+            if x_pos + texture_width < 0 || x_pos > sprite.screen_size.x {
+                continue
+            }
+            
             dest_rect := sdl.FRect{
-                x = bg_tex.offset.x + f32(i * int(w)),
+                x = x_pos,
                 y = bg_tex.offset.y,
-                w = f32(w),
-                h = f32(h),
+                w = texture_width,
+                h = texture_height,
             }
             
             sdl.RenderCopyF(renderer, bg_tex.texture, nil, &dest_rect)
@@ -265,10 +302,15 @@ sprite_component_set_bg_textures :: proc(sprite: ^Sprite_Component, textures: []
     
     clear(&sprite.bg_textures)
     
-    for texture in textures {
+    for texture, i in textures {
+        // 複数のテクスチャを横に並べて配置
+        w, h: i32
+        sdl.QueryTexture(texture, nil, nil, &w, &h)
+        texture_width := f32(w)
+        
         bg_tex := BG_Texture{
             texture = texture,
-            offset = VEC2_ZERO,
+            offset = Vec2{f32(i) * texture_width, 0.0}, // 各テクスチャを横に並べる
         }
         append(&sprite.bg_textures, bg_tex)
     }
