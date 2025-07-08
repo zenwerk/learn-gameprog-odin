@@ -42,7 +42,7 @@ laser_create :: proc(game: ^Game) -> ^Actor {
 }
 
 // レーザー固有の更新処理
-// 生存時間の管理と画面外での削除
+// 生存時間の管理とラップアラウンド処理
 laser_update_actor :: proc(laser: ^Actor, delta_time: f32) {
     // 生存時間タイマーを更新
     if laser_data, ok := &laser_data_map[laser]; ok {
@@ -55,15 +55,27 @@ laser_update_actor :: proc(laser: ^Actor, delta_time: f32) {
         }
     }
     
-    // 画面外に出たレーザーも削除
+    // 画面外に出たレーザーを反対側から再登場させる
+    // （ラップアラウンド処理）
     screen_width: f32 = 1024
     screen_height: f32 = 768
-    margin: f32 = 100
+    margin: f32 = 25  // レーザーのサイズを考慮した小さめのマージン
     
     pos := laser.position
     
-    if pos.x < -margin || pos.x > screen_width + margin ||
-       pos.y < -margin || pos.y > screen_height + margin {
-        laser.state = .Dead
+    // X軸のラップアラウンド
+    if pos.x < -margin {
+        pos.x = screen_width + margin
+    } else if pos.x > screen_width + margin {
+        pos.x = -margin
     }
+    
+    // Y軸のラップアラウンド
+    if pos.y < -margin {
+        pos.y = screen_height + margin
+    } else if pos.y > screen_height + margin {
+        pos.y = -margin
+    }
+    
+    laser.position = pos
 }
