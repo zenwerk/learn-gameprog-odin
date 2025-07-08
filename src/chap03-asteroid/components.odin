@@ -248,6 +248,10 @@ input_component_update :: proc(component: ^Component, delta_time: f32) {
         angular_speed -= input.max_angular_speed
     }
     input.angular_speed = angular_speed
+    
+    // 移動コンポーネントとして更新処理も実行
+    // Input_ComponentはMove_Componentを継承しているため
+    move_component_update(&input.move.base, delta_time)
 }
 
 // 円形衝突判定コンポーネントの作成

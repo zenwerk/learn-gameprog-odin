@@ -1,5 +1,14 @@
 package chap03_asteroid
 
+// レーザー固有のデータ
+// 生存時間タイマーを管理
+Laser_Data :: struct {
+    death_timer: f32,  // 生存時間タイマー（秒）
+}
+
+// グローバルマップでアクターIDとレーザーデータを関連付け
+laser_data_map: map[rawptr]Laser_Data
+
 // レーザー弾アクターを作成
 // 直進し、一定時間後に消滅、小惑星との衝突判定を持つ
 laser_create :: proc(game: ^Game) -> ^Actor {
@@ -24,22 +33,35 @@ laser_create :: proc(game: ^Game) -> ^Actor {
     // 小惑星との衝突を検出するため
     circle := circle_component_create(laser, 11.0)  // 小さな半径
     
+    // レーザー固有データを初期化
+    laser_data_map[laser] = Laser_Data{
+        death_timer = 1.0,  // 1秒後に消滅
+    }
+    
     return laser
 }
 
 // レーザー固有の更新処理
 // 生存時間の管理と画面外での削除
 laser_update_actor :: proc(laser: ^Actor, delta_time: f32) {
-    // TODO: 生存時間タイマーを実装（1秒後に自動削除）
-    // 現在は画面外に出たら削除する簡易実装
+    // 生存時間タイマーを更新
+    if laser_data, ok := &laser_data_map[laser]; ok {
+        laser_data.death_timer -= delta_time
+        
+        // 時間切れで削除
+        if laser_data.death_timer <= 0.0 {
+            laser.state = .Dead
+            return
+        }
+    }
     
+    // 画面外に出たレーザーも削除
     screen_width: f32 = 1024
     screen_height: f32 = 768
     margin: f32 = 100
     
     pos := laser.position
     
-    // 画面外に出たレーザーを削除
     if pos.x < -margin || pos.x > screen_width + margin ||
        pos.y < -margin || pos.y > screen_height + margin {
         laser.state = .Dead

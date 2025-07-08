@@ -83,6 +83,16 @@ actor_create :: proc(game: ^Game, type: Actor_Type = .Default) -> ^Actor {
 // アクターの削除
 // アクターとそのすべてのコンポーネントを破棄する
 actor_destroy :: proc(actor: ^Actor) {
+    // タイプ固有のクリーンアップ処理
+    #partial switch actor.type {
+    case .Ship:
+        // 宇宙船データをマップから削除
+        delete_key(&ship_data_map, actor)
+    case .Laser:
+        // レーザーデータをマップから削除
+        delete_key(&laser_data_map, actor)
+    }
+    
     // 所有するすべてのコンポーネントを削除
     for component in actor.components {
         component_destroy(component)

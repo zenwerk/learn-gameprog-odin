@@ -2,6 +2,16 @@ package chap03_asteroid
 
 import sdl "vendor:sdl2"
 
+// 宇宙船固有のデータ
+// レーザーのクールダウンタイマーなどを管理
+Ship_Data :: struct {
+    laser_cooldown: f32,  // レーザーのクールダウンタイマー（秒）
+}
+
+// グローバルマップでアクターIDと宇宙船データを関連付け
+// 注意：実際のゲームでは、より洗練された方法（ECSなど）を推奨
+ship_data_map: map[rawptr]Ship_Data
+
 // プレイヤーの宇宙船を作成
 // 入力処理、移動、描画、レーザー発射機能を持つ
 ship_create :: proc(game: ^Game) -> ^Actor {
@@ -23,23 +33,37 @@ ship_create :: proc(game: ^Game) -> ^Actor {
         sprite_component_set_texture(sprite, texture)
     }
     
+    // 宇宙船固有データを初期化
+    ship_data_map[ship] = Ship_Data{
+        laser_cooldown = 0.0,
+    }
+    
     return ship
 }
 
 // 宇宙船の入力処理
 // レーザー発射などの船固有の操作を処理
 ship_process_input :: proc(ship: ^Actor, keyboard_state: [^]u8) {
-    // スペースキーでレーザー発射
+    // スペースキーでレーザー発射（クールダウン中でなければ）
     if keyboard_state[sdl.SCANCODE_SPACE] != 0 {
-        ship_fire_laser(ship)
+        if ship_data, ok := &ship_data_map[ship]; ok {
+            if ship_data.laser_cooldown <= 0.0 {
+                ship_fire_laser(ship)
+                ship_data.laser_cooldown = 0.5  // 0.5秒のクールダウン
+            }
+        }
     }
 }
 
 // 宇宙船固有の更新処理
 // レーザーのクールダウンタイマーなどを管理
 ship_update_actor :: proc(ship: ^Actor, delta_time: f32) {
-    // TODO: レーザーのクールダウンタイマーを実装
-    // 現在は簡易実装（毎フレーム発射可能）
+    // レーザーのクールダウンタイマーを更新
+    if ship_data, ok := &ship_data_map[ship]; ok {
+        if ship_data.laser_cooldown > 0.0 {
+            ship_data.laser_cooldown -= delta_time
+        }
+    }
 }
 
 // レーザー発射処理
