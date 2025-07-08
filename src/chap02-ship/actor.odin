@@ -7,6 +7,12 @@ Actor_State :: enum {
     Dead,    // 削除対象
 }
 
+// Actorの種類を表すenum
+Actor_Type :: enum {
+    Default,  // デフォルト（特別な処理なし）
+    Ship,     // プレイヤーの宇宙船
+}
+
 // Componentはアクターに機能を追加するモジュール
 Component :: struct {
     owner:        ^Actor,  // このコンポーネントを所有するアクター
@@ -17,6 +23,7 @@ Component :: struct {
 Actor :: struct {
     // アクターの状態
     state: Actor_State,
+    type:  Actor_Type,
     
     // トランスフォーム（位置、回転、スケール）
     position: Vec2,  // ワールド座標での位置
@@ -31,10 +38,11 @@ Actor :: struct {
 }
 
 // アクターの初期化
-actor_create :: proc(game: ^Game) -> ^Actor {
+actor_create :: proc(game: ^Game, type: Actor_Type = .Default) -> ^Actor {
     actor := new(Actor)
     actor.game = game
     actor.state = .Active
+    actor.type = type
     actor.position = VEC2_ZERO
     actor.scale = 1.0
     actor.rotation = 0.0
@@ -75,8 +83,13 @@ actor_update :: proc(actor: ^Actor, delta_time: f32) {
 
 // アクター固有の更新処理（サブクラスでオーバーライド）
 actor_update_actor :: proc(actor: ^Actor, delta_time: f32) {
-    // デフォルト実装では何もしない
-    // 各アクタータイプで具体的な動作を実装
+    // アクターの種類に応じて特別な処理を呼び出し
+    switch actor.type {
+    case .Ship:
+        ship_update_actor(actor, delta_time)
+    case .Default:
+        // デフォルト実装では何もしない
+    }
 }
 
 // コンポーネントの更新処理

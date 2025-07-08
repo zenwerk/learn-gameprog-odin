@@ -2,6 +2,19 @@ package chap02_ship
 
 import sdl "vendor:sdl2"
 
+// スプライトコンポーネントの種類
+Sprite_Component_Type :: enum {
+    Normal,
+    Background,
+    Animated,
+}
+
+// 背景テクスチャとそのオフセット情報
+BG_Texture :: struct {
+    texture: ^sdl.Texture,
+    offset:  Vec2,
+}
+
 // スプライトコンポーネント（画像描画機能を提供）
 Sprite_Component :: struct {
     using base: Component,  // Componentを継承
@@ -11,16 +24,30 @@ Sprite_Component :: struct {
     draw_order: int,           // 描画順序（小さいほど背景に描画）
     tex_width:  int,           // テクスチャの幅
     tex_height: int,           // テクスチャの高さ
+    type:       Sprite_Component_Type, // スプライトコンポーネントの種類
+    
+    // 背景専用データ（type == .Backgroundの場合のみ使用）
+    bg_textures:  [dynamic]BG_Texture, // 背景テクスチャとオフセットのペア
+    screen_size:  Vec2,                // 画面サイズ
+    scroll_speed: f32,                 // スクロール速度
 }
 
 // スプライトコンポーネントの作成
-sprite_component_create :: proc(owner: ^Actor, draw_order: int = 100) -> ^Sprite_Component {
+sprite_component_create :: proc(owner: ^Actor, draw_order: int = 100, type: Sprite_Component_Type = .Normal) -> ^Sprite_Component {
     sprite := new(Sprite_Component)
     sprite.base = Component{owner = owner, update_order = 100}
     sprite.draw_order = draw_order
     sprite.texture = nil
     sprite.tex_width = 0
     sprite.tex_height = 0
+    sprite.type = type
+    
+    // 背景の場合は追加データを初期化
+    if type == .Background {
+        sprite.bg_textures = make([dynamic]BG_Texture)
+        sprite.screen_size = Vec2{1024, 768}
+        sprite.scroll_speed = 0.0
+    }
     
     // アクターにコンポーネントを追加
     actor_add_component(owner, &sprite.base)
@@ -37,6 +64,11 @@ sprite_component_create :: proc(owner: ^Actor, draw_order: int = 100) -> ^Sprite
 sprite_component_destroy :: proc(sprite: ^Sprite_Component) {
     // ゲームの描画リストから削除
     game_remove_sprite(sprite.owner.game, sprite)
+    
+    // 背景データのクリーンアップ
+    if sprite.type == .Background {
+        delete(sprite.bg_textures)
+    }
     
     // ベースコンポーネントを削除
     component_destroy(&sprite.base)
@@ -183,57 +215,27 @@ anim_sprite_component_set_anim_textures :: proc(anim_sprite: ^Anim_Sprite_Compon
     }
 }
 
-// 背景スプライトコンポーネント（スクロール背景用）
-BG_Sprite_Component :: struct {
-    using sprite: Sprite_Component,  // スプライトコンポーネントを継承
-    
-    // 背景スクロール関連
-    bg_textures:  [dynamic]BG_Texture,  // 背景テクスチャとオフセットのペア
-    screen_size:  Vec2,                 // 画面サイズ
-    scroll_speed: f32,                  // スクロール速度
-}
-
-// 背景テクスチャとそのオフセット情報
-BG_Texture :: struct {
-    texture: ^sdl.Texture,
-    offset:  Vec2,
-}
-
-// 背景スプライトコンポーネントの作成
-bg_sprite_component_create :: proc(owner: ^Actor, draw_order: int = 10) -> ^BG_Sprite_Component {
-    bg_sprite := new(BG_Sprite_Component)
-    bg_sprite.sprite = sprite_component_create(owner, draw_order)^
-    bg_sprite.bg_textures = make([dynamic]BG_Texture)
-    bg_sprite.screen_size = Vec2{1024, 768}  // デフォルト画面サイズ
-    bg_sprite.scroll_speed = 0.0
-    
-    return bg_sprite
-}
-
-// 背景スプライトコンポーネントの削除
-bg_sprite_component_destroy :: proc(bg_sprite: ^BG_Sprite_Component) {
-    delete(bg_sprite.bg_textures)
-    sprite_component_destroy(&bg_sprite.sprite)
-    free(bg_sprite)
-}
-
 // 背景の更新処理（スクロール）
-bg_sprite_component_update :: proc(bg_sprite: ^BG_Sprite_Component, delta_time: f32) {
+sprite_component_update_background :: proc(sprite: ^Sprite_Component, delta_time: f32) {
+    if sprite.type != .Background do return
+    
     // 全ての背景テクスチャのオフセットを更新
-    for &bg_tex in bg_sprite.bg_textures {
-        bg_tex.offset.x += bg_sprite.scroll_speed * delta_time
+    for &bg_tex in sprite.bg_textures {
+        bg_tex.offset.x += sprite.scroll_speed * delta_time
         
         // 画面幅分スクロールしたら元の位置に戻す（無限スクロール）
-        if bg_tex.offset.x > bg_sprite.screen_size.x {
+        if bg_tex.offset.x > sprite.screen_size.x {
             bg_tex.offset.x = 0.0
         }
     }
 }
 
 // 背景の描画処理
-bg_sprite_component_draw :: proc(bg_sprite: ^BG_Sprite_Component, renderer: ^sdl.Renderer) {
+sprite_component_draw_background :: proc(sprite: ^Sprite_Component, renderer: ^sdl.Renderer) {
+    if sprite.type != .Background do return
+    
     // 各背景テクスチャを描画
-    for bg_tex in bg_sprite.bg_textures {
+    for bg_tex in sprite.bg_textures {
         if bg_tex.texture == nil {
             continue
         }
@@ -258,24 +260,28 @@ bg_sprite_component_draw :: proc(bg_sprite: ^BG_Sprite_Component, renderer: ^sdl
 }
 
 // 背景用テクスチャを設定
-bg_sprite_component_set_bg_textures :: proc(bg_sprite: ^BG_Sprite_Component, textures: []^sdl.Texture) {
-    clear(&bg_sprite.bg_textures)
+sprite_component_set_bg_textures :: proc(sprite: ^Sprite_Component, textures: []^sdl.Texture) {
+    if sprite.type != .Background do return
+    
+    clear(&sprite.bg_textures)
     
     for texture in textures {
         bg_tex := BG_Texture{
             texture = texture,
             offset = VEC2_ZERO,
         }
-        append(&bg_sprite.bg_textures, bg_tex)
+        append(&sprite.bg_textures, bg_tex)
     }
 }
 
 // 画面サイズを設定
-bg_sprite_component_set_screen_size :: proc(bg_sprite: ^BG_Sprite_Component, size: Vec2) {
-    bg_sprite.screen_size = size
+sprite_component_set_screen_size :: proc(sprite: ^Sprite_Component, size: Vec2) {
+    if sprite.type != .Background do return
+    sprite.screen_size = size
 }
 
 // スクロール速度を設定
-bg_sprite_component_set_scroll_speed :: proc(bg_sprite: ^BG_Sprite_Component, speed: f32) {
-    bg_sprite.scroll_speed = speed
+sprite_component_set_scroll_speed :: proc(sprite: ^Sprite_Component, speed: f32) {
+    if sprite.type != .Background do return
+    sprite.scroll_speed = speed
 }

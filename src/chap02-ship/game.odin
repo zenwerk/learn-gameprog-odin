@@ -139,6 +139,13 @@ game_update_game :: proc(game: ^Game) {
     }
     game.updating_actors = false
     
+    // 背景スプライトの更新（背景スクロールなど）
+    for sprite in game.sprites {
+        if sprite.type == .Background {
+            sprite_component_update_background(sprite, delta_time)
+        }
+    }
+    
     // 追加待ちアクターをメインリストに移動
     for pending_actor in game.pending_actors {
         append(&game.actors, pending_actor)
@@ -167,8 +174,8 @@ game_update_game :: proc(game: ^Game) {
 
 // 画面描画処理
 game_generate_output :: proc(game: ^Game) {
-    // 背景色を設定（濃い青色）
-    sdl.SetRenderDrawColor(game.renderer, 0, 0, 100, 255)
+    // 背景色を設定（黒色）
+    sdl.SetRenderDrawColor(game.renderer, 0, 0, 0, 255)
     sdl.RenderClear(game.renderer)
     
     // スプライトを描画順序でソートして描画
@@ -180,7 +187,12 @@ game_generate_output :: proc(game: ^Game) {
     }
     
     for sprite in game.sprites {
-        sprite_component_draw(sprite, game.renderer)
+        // 背景スプライトの場合は専用描画関数を使用
+        if sprite.type == .Background {
+            sprite_component_draw_background(sprite, game.renderer)
+        } else {
+            sprite_component_draw(sprite, game.renderer)
+        }
     }
     
     // フロントバッファとバックバッファを交換
@@ -193,31 +205,54 @@ game_load_data :: proc(game: ^Game) {
     game.ship = ship_create(game)
     actor_set_position(game.ship, Vec2{100, 384})  // 画面左側中央に配置
     actor_set_rotation(game.ship, 0.0) // デフォルトで右向き（回転なし）
+    actor_set_scale(game.ship, 1.5) // C++と同じスケール
     
-    // 背景の作成（シンプルに普通のスプライトとして）
-    temp_actor := actor_create(game)
-    actor_set_position(temp_actor, Vec2{512, 384})  // 画面中央
+    // 背景スクロールアクターを作成
+    bg_actor := actor_create(game)
+    actor_set_position(bg_actor, Vec2{512, 384})
     
-    // 通常のスプライトコンポーネントを使用
-    bg_sprite := sprite_component_create(temp_actor, 10)  // 低い描画順序（背景）
+    // 背景スプライトコンポーネントを作成
+    bg_sprite := sprite_component_create(bg_actor, 10, .Background)
+    sprite_component_set_screen_size(bg_sprite, Vec2{1024, 768})
+    sprite_component_set_scroll_speed(bg_sprite, -100.0) // C++と同じ速度
     
-    // 背景画像を読み込み（プロジェクトルートから実行される前提）
-    bg_texture := game_get_texture(game, "src/chap02-ship/Assets/Stars.png")
-    if bg_texture != nil {
-        sprite_component_set_texture(bg_sprite, bg_texture)
-        sdl.Log("Successfully loaded background texture: Stars.png")
-        // 背景を画面サイズに合わせて拡大
-        actor_set_scale(temp_actor, 2.0)
-    } else {
-        // フォールバックとして他の背景を試す
-        bg_texture = game_get_texture(game, "src/chap02-ship/Assets/Farback01.png")
-        if bg_texture != nil {
-            sprite_component_set_texture(bg_sprite, bg_texture)
-            sdl.Log("Successfully loaded background texture: Farback01.png")
-            actor_set_scale(temp_actor, 1.5)
-        } else {
-            sdl.Log("WARNING: No background textures loaded!")
+    // 背景テクスチャを読み込み
+    bg_textures := [2]^sdl.Texture{
+        game_get_texture(game, "src/chap02-ship/Assets/Farback01.png"),
+        game_get_texture(game, "src/chap02-ship/Assets/Farback02.png"),
+    }
+    
+    // 有効なテクスチャのみを設定
+    valid_textures := make([dynamic]^sdl.Texture, context.temp_allocator)
+    for texture in bg_textures {
+        if texture != nil {
+            append(&valid_textures, texture)
         }
+    }
+    
+    if len(valid_textures) > 0 {
+        sprite_component_set_bg_textures(bg_sprite, valid_textures[:])
+        sdl.Log("Successfully loaded %d background textures", len(valid_textures))
+    } else {
+        sdl.Log("WARNING: No background textures loaded!")
+    }
+    
+    // 星の背景を作成（より手前のレイヤー）
+    stars_actor := actor_create(game)
+    actor_set_position(stars_actor, Vec2{512, 384})
+    
+    stars_sprite := sprite_component_create(stars_actor, 50, .Background)
+    sprite_component_set_screen_size(stars_sprite, Vec2{1024, 768})
+    sprite_component_set_scroll_speed(stars_sprite, -200.0) // 星は背景より速く
+    
+    // 星のテクスチャを読み込み
+    stars_texture := game_get_texture(game, "src/chap02-ship/Assets/Stars.png")
+    if stars_texture != nil {
+        star_textures := [1]^sdl.Texture{stars_texture}
+        sprite_component_set_bg_textures(stars_sprite, star_textures[:])
+        sdl.Log("Successfully loaded stars texture")
+    } else {
+        sdl.Log("WARNING: Stars texture not loaded!")
     }
 }
 
